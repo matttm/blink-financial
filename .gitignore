@@ -1,0 +1,5 @@
+# Local Go build cache
+.gocache/
+
+# Local compiled binary
+ledger-sim
