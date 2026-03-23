@@ -21,13 +21,13 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	apiMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
@@ -40,7 +40,7 @@ func main() {
 		_, _ = w.Write([]byte("ready"))
 	})
 
-	mux.HandleFunc("/transactions", func(w http.ResponseWriter, r *http.Request) {
+	apiMux.HandleFunc("/transactions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -78,9 +78,18 @@ func main() {
 		_, _ = fmt.Fprintf(w, `{"status":"accepted","instance":"%s"}`+"\n", cfg.InstanceID)
 	})
 
+	// 2. Create the main, root ServeMux.
+	rootMux := http.NewServeMux()
+
+	// 3. Register the apiMux with the rootMux, using http.StripPrefix.
+	// Requests to "/api/v1/" (and anything under it) will be passed to apiMux,
+	// but the "/api/v1" part of the path will be stripped first.
+	rootMux.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
+
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           requestLogger(mux),
+		Handler:           requestLogger(rootMux),
 		ReadHeaderTimeout: 2 * time.Second,
 	}
 
