@@ -1,6 +1,7 @@
 package main
 
 import (
+	"blink-financial/internal/config"
 	"bufio"
 	"context"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -16,10 +16,10 @@ import (
 const maxBodyBytes = 1 << 20
 
 func main() {
-	port := envOrDefault("PORT", "8080")
-	redisAddr := envOrDefault("REDIS_ADDR", "redis:6379")
-	redisListKey := envOrDefault("REDIS_LIST_KEY", "blink:transactions")
-	instanceID := envOrDefault("HOSTNAME", "local-app")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -31,7 +31,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
-		if err := redisPing(ctx, redisAddr); err != nil {
+		if err := redisPing(ctx, cfg.RedisAddr); err != nil {
 			http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -60,7 +60,7 @@ func main() {
 
 		payload := strings.TrimSpace(string(body))
 		record := fmt.Sprintf(`{"instance":"%s","received_at":"%s","payload":%q}`,
-			instanceID,
+			cfg.InstanceID,
 			time.Now().UTC().Format(time.RFC3339Nano),
 			payload,
 		)
@@ -68,23 +68,23 @@ func main() {
 		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		defer cancel()
 
-		if err := redisRPush(ctx, redisAddr, redisListKey, record); err != nil {
+		if err := redisRPush(ctx, cfg.RedisAddr, cfg.RedisListKey, record); err != nil {
 			http.Error(w, "failed to enqueue transaction batch", http.StatusBadGateway)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = fmt.Fprintf(w, `{"status":"accepted","instance":"%s"}`+"\n", instanceID)
+		_, _ = fmt.Fprintf(w, `{"status":"accepted","instance":"%s"}`+"\n", cfg.InstanceID)
 	})
 
 	server := &http.Server{
-		Addr:              ":" + port,
+		Addr:              ":" + cfg.Port,
 		Handler:           requestLogger(mux),
 		ReadHeaderTimeout: 2 * time.Second,
 	}
 
-	log.Printf("blink ledger simulator listening on :%s, redis=%s", port, redisAddr)
+	log.Printf("blink ledger simulator listening on :%s, redis=%s", cfg.Port, cfg.RedisAddr)
 	log.Fatal(server.ListenAndServe())
 }
 
@@ -94,13 +94,6 @@ func requestLogger(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
 	})
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func redisPing(ctx context.Context, addr string) error {

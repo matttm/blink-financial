@@ -4,6 +4,7 @@ WORKDIR /src
 
 COPY go.mod ./
 COPY cmd ./cmd
+COPY internal ./internal
 
 RUN go build -o /out/blink-ledger ./cmd/ledger-sim
 
