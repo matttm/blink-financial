@@ -1,10 +1,10 @@
 package main
 
 import (
-	"blink-financial/internal/config"
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/matttm/blink-financial/internal/config"
 	"io"
 	"log"
 	"net"

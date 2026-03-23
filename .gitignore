@@ -2,4 +2,4 @@
 .gocache/
 
 # Local compiled binary
-ledger-sim
+/ledger-sim
