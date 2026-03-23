@@ -1,0 +1,46 @@
+services:
+  haproxy:
+    image: haproxy:3.0-alpine
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "${BLINK_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./docker/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - blink
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      REDIS_ADDR: "redis:6379"
+      REDIS_LIST_KEY: "${BLINK_REDIS_LIST_KEY:-blink:transactions}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8080"
+    networks:
+      - blink
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${BLINK_RAMDISK_PATH:-/tmp/blink-ramdisk}/redis-data:/data
+    networks:
+      - blink
+
+networks:
+  blink:
+    driver: bridge
