@@ -5,14 +5,14 @@ This document explains how to soak test the local Blink Financial stack with `k6
 The current stack is:
 
 - `haproxy` as the public entry point on port `8080`
-- `app` replicas serving `POST /transactions`
+- `app` replicas serving `POST /api/v1/transactions`
 - `redis` as the sink, with its data mounted to your RAM disk path
 
 ## What The Service Expects
 
 The Go app currently accepts:
 
-- `POST /transactions`
+- `POST /api/v1/transactions`
 - A non-empty request body
 - JSON is fine for the load test payload
 
@@ -59,19 +59,19 @@ docker compose up --build --scale app=10 -d
 Check that HAProxy is reachable:
 
 ```bash
-curl http://localhost:8080/healthz
+curl http://localhost:8080/api/v1/healthz
 ```
 
 Check that the app can talk to Redis:
 
 ```bash
-curl http://localhost:8080/readyz
+curl http://localhost:8080/api/v1/readyz
 ```
 
 You want:
 
-- `/healthz` to return `200`
-- `/readyz` to return `200`
+- `/api/v1/healthz` to return `200`
+- `/api/v1/readyz` to return `200`
 
 ## 4. Install k6
 
@@ -131,7 +131,7 @@ export const options = {
 const payload = makeBatch(500);
 
 export default function () {
-  const res = http.post(`${baseUrl}/transactions`, payload, {
+  const res = http.post(`${baseUrl}/api/v1/transactions`, payload, {
     headers: { 'Content-Type': 'application/json' },
     timeout: '2s',
   });
@@ -198,7 +198,7 @@ During the soak test, pay attention to:
 - container CPU saturation
 - container memory growth
 - Redis queue depth growth
-- whether `/readyz` starts failing under sustained pressure
+- whether `/api/v1/readyz` starts failing under sustained pressure
 
 ## 10. Current Bottlenecks In This Repo
 

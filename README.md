@@ -1,0 +1,257 @@
+# Blink Financial
+
+Blink Financial is a local-first Go service for experimenting with high-throughput transaction ingestion. The repository is intentionally small: an HTTP service accepts transaction batches, forwards them into Redis, and runs behind HAProxy so you can scale app replicas with Docker Compose and pressure-test the shape of the system.
+
+This is not a full ledger yet. It is a simulation scaffold for testing local infrastructure, batch ingestion, queue-backed writes, and load-generation workflows before moving toward an append-only WAL design.
+
+## Project Status
+
+This repository is under early development.
+
+Expect:
+
+- breaking changes
+- incomplete features
+- rough edges in the local stack
+- documentation and interfaces to evolve as the design solidifies
+
+## What This Repository Contains
+
+- A Go HTTP service under `cmd/ledger-sim`
+- Typed startup configuration under `internal/config`
+- A local Docker Compose stack with:
+  - `haproxy` as the entry point
+  - scalable `app` containers
+  - `redis` as the sink
+- supporting docs for architecture, throughput checklist, and soak testing
+
+## Architecture
+
+At a high level:
+
+```text
+Client -> HAProxy -> [Go app replicas] -> Redis -> RAM disk-backed data path
+```
+
+More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-financial/architecture.md).
+
+## Repository Layout
+
+```text
+.
+├── README.md
+├── compose.yaml
+├── Dockerfile
+├── .env.example
+├── checklist.md
+├── architecture.md
+├── soak-test-case.md
+├── cmd/
+│   └── ledger-sim/
+│       └── main.go
+├── internal/
+│   └── config/
+│       └── config.go
+├── docker/
+│   ├── haproxy/
+│   │   └── haproxy.cfg
+│   └── redis/
+│       └── redis.conf
+└── scripts/
+    └── setup_ramdisk.sh
+```
+
+## Current Request Flow
+
+1. A client sends an HTTP request to HAProxy on port `8080`.
+2. HAProxy forwards the request to one of the running app replicas.
+3. The Go service accepts the batch at `POST /api/v1/transactions`.
+4. The app pushes the request payload into Redis using a raw RESP write.
+5. Redis persists its append-only data under the host path configured by `BLINK_RAMDISK_PATH`.
+
+## API
+
+The current service is mounted under the `/api/v1` prefix.
+
+Endpoints:
+
+- `GET /api/v1/healthz`
+- `GET /api/v1/readyz`
+- `POST /api/v1/transactions`
+
+Behavior:
+
+- `healthz` returns `200 OK` if the process is up.
+- `readyz` returns `200 OK` if Redis is reachable.
+- `transactions` accepts a non-empty request body and returns `202 Accepted` after pushing the payload into Redis.
+
+Example:
+
+```bash
+curl -i http://localhost:8080/api/v1/healthz
+
+curl -i http://localhost:8080/api/v1/readyz
+
+curl -i \
+  -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d '[{"id":"txn-1","account_id":"acct-1","amount_cents":1250,"currency":"USD"}]'
+```
+
+## Configuration
+
+The service reads its configuration from environment variables at startup.
+
+App variables:
+
+- `PORT`
+- `REDIS_ADDR`
+- `REDIS_LIST_KEY`
+- `HOSTNAME`
+
+Compose variables:
+
+- `BLINK_HTTP_PORT`
+- `BLINK_RAMDISK_PATH`
+- `BLINK_REDIS_LIST_KEY`
+
+Defaults are documented in [.env.example](/Users/Matt.Maloney/projects/play/blink-financial/.env.example).
+
+## Prerequisites
+
+For local development you should have:
+
+- Go `1.24+`
+- Docker with Compose support
+- a RAM disk or other fast local path for Redis persistence
+- optionally `k6` if you want to run soak tests
+
+If you want a quick RAM disk helper, use [setup_ramdisk.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/setup_ramdisk.sh).
+
+## Quick Start
+
+1. Copy the example env file.
+
+```bash
+cp .env.example .env
+```
+
+2. Make sure the Redis target path exists.
+
+```bash
+mkdir -p /Volumes/blink-ramdisk/redis-data
+```
+
+3. Start the stack.
+
+```bash
+docker compose up --build --scale app=3 -d
+```
+
+4. Check the health endpoints.
+
+```bash
+curl http://localhost:8080/api/v1/healthz
+curl http://localhost:8080/api/v1/readyz
+```
+
+5. Send a sample batch.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d '[{"id":"txn-1","account_id":"acct-1","amount_cents":1250,"currency":"USD"}]'
+```
+
+6. Inspect queue depth in Redis.
+
+```bash
+docker compose exec redis redis-cli LLEN blink:transactions
+```
+
+## Running The Service Without Docker
+
+You can also run the service directly if Redis is already available:
+
+```bash
+PORT=8080 \
+REDIS_ADDR=localhost:6379 \
+REDIS_LIST_KEY=blink:transactions \
+HOSTNAME=local-dev \
+go run ./cmd/ledger-sim
+```
+
+Then call:
+
+```bash
+curl http://localhost:8080/api/v1/healthz
+```
+
+## Scaling The App Replicas
+
+Compose defines a single `app` service. To increase concurrency, scale that service at runtime:
+
+```bash
+docker compose up --build --scale app=10 -d
+```
+
+HAProxy is configured to distribute requests across the `app` containers discovered on the Compose network.
+
+## Soak Testing With k6
+
+The repository already includes a longer guide in [soak-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/soak-test-case.md).
+
+The short version is:
+
+1. Bring the stack up.
+2. Verify `/api/v1/healthz` and `/api/v1/readyz`.
+3. Run `k6` against `POST /api/v1/transactions`.
+4. Monitor Redis queue depth, request latency, container CPU, and memory.
+
+Example target:
+
+```bash
+k6 run -e BASE_URL=http://localhost:8080 soak.js
+```
+
+## Design Notes
+
+Some intentional simplifications in the current code:
+
+- the HTTP server uses the standard library `http.ServeMux`
+- the service reads config once at startup into a typed config struct
+- Redis writes are sent using raw TCP plus RESP rather than a client library
+- the app returns quickly after queueing the request into Redis
+
+These choices keep the current prototype small and easy to inspect.
+
+## Current Limitations
+
+This repository is useful for topology and local throughput experiments, but it is not yet a production ledger.
+
+Important current limitations:
+
+- each request opens a fresh Redis connection
+- each request is logged synchronously
+- transaction payloads are pushed whole into Redis rather than being normalized or written to a WAL
+- there are no Prometheus metrics yet
+- the sink is Redis-backed, not an append-only binary ledger
+
+Those limitations matter for performance numbers. Treat current benchmark results as directional, not authoritative.
+
+## Suggested Next Steps
+
+Natural follow-up improvements for this repo are:
+
+1. Add a real k6 script under `k6/`
+2. Add Prometheus metrics and pprof endpoints
+3. Replace per-request Redis dialing with connection reuse
+4. Introduce an append-only WAL on the RAM disk
+5. Separate ingestion from background persistence workers
+6. Add integration tests for the API and Redis sink behavior
+
+## Additional Docs
+
+- [checklist.md](/Users/Matt.Maloney/projects/play/blink-financial/checklist.md) for the original throughput checklist
+- [architecture.md](/Users/Matt.Maloney/projects/play/blink-financial/architecture.md) for the ASCII architecture diagram
+- [soak-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/soak-test-case.md) for k6 soak-test instructions
