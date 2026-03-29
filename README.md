@@ -45,6 +45,8 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 ├── .env.example
 ├── checklist.md
 ├── architecture.md
+├── k6/
+│   └── soak.js
 ├── soak-test-case.md
 ├── cmd/
 │   └── ledger-sim/
@@ -128,6 +130,8 @@ For local development you should have:
 
 If you want a quick RAM disk helper, use [setup_ramdisk.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/setup_ramdisk.sh).
 
+A RAM disk is different from a normal directory. A normal directory is just a folder on your SSD or disk. A RAM disk is a separate filesystem backed by memory and mounted at a directory path. The path looks like a normal folder, but reads and writes go to RAM instead of disk. That is why it is useful here: Redis can write to a very fast memory-backed path during local throughput tests.
+
 ## Quick Start
 
 1. Copy the example env file.
@@ -136,11 +140,23 @@ If you want a quick RAM disk helper, use [setup_ramdisk.sh](/Users/Matt.Maloney/
 cp .env.example .env
 ```
 
-2. Make sure the Redis target path exists.
+2. Create the RAM disk and make sure the Redis target path exists.
+
+If you use the helper script, it creates and mounts a RAM-backed filesystem first. That is different from just running `mkdir`, which would only create a normal folder on disk.
+
+Example:
+
+```bash
+./scripts/setup_ramdisk.sh 1024 /Volumes/blink-ramdisk
+```
+
+Then create the Redis data directory inside that mounted filesystem:
 
 ```bash
 mkdir -p /Volumes/blink-ramdisk/redis-data
 ```
+
+This two-step process matters. If `/Volumes/blink-ramdisk` is only a normal folder, Docker will still bind mount it, but Redis will write to your regular disk instead of RAM.
 
 3. Start the stack.
 
@@ -211,7 +227,7 @@ The short version is:
 Example target:
 
 ```bash
-k6 run -e BASE_URL=http://localhost:8080 soak.js
+k6 run -e BASE_URL=http://localhost:8080 k6/soak.js
 ```
 
 ## Design Notes
@@ -243,12 +259,11 @@ Those limitations matter for performance numbers. Treat current benchmark result
 
 Natural follow-up improvements for this repo are:
 
-1. Add a real k6 script under `k6/`
-2. Add Prometheus metrics and pprof endpoints
-3. Replace per-request Redis dialing with connection reuse
-4. Introduce an append-only WAL on the RAM disk
-5. Separate ingestion from background persistence workers
-6. Add integration tests for the API and Redis sink behavior
+1. Add Prometheus metrics and pprof endpoints
+2. Replace per-request Redis dialing with connection reuse
+3. Introduce an append-only WAL on the RAM disk
+4. Separate ingestion from background persistence workers
+5. Add integration tests for the API and Redis sink behavior
 
 ## Additional Docs
 

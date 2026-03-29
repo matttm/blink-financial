@@ -28,9 +28,21 @@ cp .env.example .env
 
 Make sure your RAM disk path exists and has a Redis data directory:
 
+If you use the RAM disk helper script, it mounts a memory-backed filesystem at that path first. That is different from creating a plain directory on your SSD. The directory name may look the same, but the storage underneath it is different.
+
+Example:
+
+```bash
+./scripts/setup_ramdisk.sh 1024 /Volumes/blink-ramdisk
+```
+
+Then create the Redis subdirectory:
+
 ```bash
 mkdir -p /Volumes/blink-ramdisk/redis-data
 ```
+
+This is worth doing explicitly because Docker can create missing bind-mount directories for you. If the RAM disk is not actually mounted, Docker may silently create a normal directory on disk and Redis will write there instead.
 
 If you are not using `/Volumes/blink-ramdisk`, update `.env`:
 
@@ -87,69 +99,37 @@ Check the install:
 k6 version
 ```
 
-## 5. Create A Soak Script
+## 5. Use The Checked-In Soak Script
 
-Create a file named `soak.js` with the following contents:
+This repository now includes a reusable script at `k6/soak.js`.
 
-```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
+Useful environment variables:
 
-const baseUrl = __ENV.BASE_URL || 'http://localhost:8080';
-
-function makeBatch(size) {
-  const txs = [];
-  for (let i = 0; i < size; i++) {
-    txs.push({
-      id: `${__VU}-${__ITER}-${i}`,
-      account_id: `acct-${i % 100}`,
-      amount_cents: (i % 5000) + 1,
-      currency: 'USD',
-      ts: new Date().toISOString(),
-    });
-  }
-  return JSON.stringify(txs);
-}
-
-export const options = {
-  scenarios: {
-    soak: {
-      executor: 'constant-arrival-rate',
-      rate: 200,
-      timeUnit: '1s',
-      duration: '30m',
-      preAllocatedVUs: 100,
-      maxVUs: 500,
-    },
-  },
-  thresholds: {
-    http_req_failed: ['rate<0.01'],
-    http_req_duration: ['p(95)<500'],
-  },
-};
-
-const payload = makeBatch(500);
-
-export default function () {
-  const res = http.post(`${baseUrl}/api/v1/transactions`, payload, {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: '2s',
-  });
-
-  check(res, {
-    accepted: (r) => r.status === 202,
-  });
-
-  sleep(0.1);
-}
-```
+- `BASE_URL`, default `http://localhost:8080`
+- `BATCH_SIZE`, default `500`
+- `HOT_ACCOUNT_COUNT`, default `100`
+- `RATE`, default `200`
+- `DURATION`, default `30m`
+- `PREALLOCATED_VUS`, default `100`
+- `MAX_VUS`, default `500`
 
 ## 6. Run The Soak Test
 
 Run the script against the local stack:
 
 ```bash
-k6 run -e BASE_URL=http://localhost:8080 soak.js
+k6 run -e BASE_URL=http://localhost:8080 k6/soak.js
+```
+
+Example with a larger batch and higher arrival rate:
+
+```bash
+k6 run \
+  -e BASE_URL=http://localhost:8080 \
+  -e BATCH_SIZE=1000 \
+  -e RATE=1000 \
+  -e DURATION=45m \
+  k6/soak.js
 ```
 
 ## 7. Watch The System While It Runs
@@ -217,8 +197,7 @@ That means your first soak tests should be treated as baseline topology tests, n
 
 Before pushing toward very high TPS, the next useful changes are:
 
-1. Add a checked-in `k6` script under a `k6/` directory
-2. Add Prometheus metrics for request rate, latency, and Redis write failures
-3. Replace per-request Redis connection setup with a pooled or persistent approach
-4. Reduce or disable per-request logging during load tests
-5. Move from this Redis sink toward the append-only WAL design in your checklist
+1. Add Prometheus metrics for request rate, latency, and Redis write failures
+2. Replace per-request Redis connection setup with a pooled or persistent approach
+3. Reduce or disable per-request logging during load tests
+4. Move from this Redis sink toward the append-only WAL design in your checklist
