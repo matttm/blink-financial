@@ -2,9 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/matttm/blink-financial/internal/config"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"io"
 	"log"
 	"net"
@@ -14,6 +18,47 @@ import (
 )
 
 const maxBodyBytes = 1 << 20
+
+var (
+	transactionBatchesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "blink_ledger_transaction_batches_total",
+			Help: "Total number of transaction batches handled by outcome.",
+		},
+		[]string{"outcome"},
+	)
+	transactionItemsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "blink_ledger_transactions_total",
+			Help: "Total number of transaction items observed in handled batches by outcome.",
+		},
+		[]string{"outcome"},
+	)
+	transactionBatchBytesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "blink_ledger_batch_bytes_total",
+			Help: "Total bytes received in transaction batches by outcome.",
+		},
+		[]string{"outcome"},
+	)
+	transactionRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "blink_ledger_request_duration_seconds",
+			Help:    "Latency for ledger HTTP request handling.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"endpoint", "outcome"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(
+		transactionBatchesTotal,
+		transactionItemsTotal,
+		transactionBatchBytesTotal,
+		transactionRequestDuration,
+	)
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -41,7 +86,20 @@ func main() {
 	})
 
 	apiMux.HandleFunc("/transactions", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		outcome := "accepted"
+		transactionCount := 0
+		batchBytes := 0
+
+		defer func() {
+			transactionBatchesTotal.WithLabelValues(outcome).Inc()
+			transactionItemsTotal.WithLabelValues(outcome).Add(float64(transactionCount))
+			transactionBatchBytesTotal.WithLabelValues(outcome).Add(float64(batchBytes))
+			transactionRequestDuration.WithLabelValues("transactions", outcome).Observe(time.Since(start).Seconds())
+		}()
+
 		if r.Method != http.MethodPost {
+			outcome = "method_not_allowed"
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -50,10 +108,15 @@ func main() {
 
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
 		if err != nil {
+			outcome = "read_error"
 			http.Error(w, "failed to read request body", http.StatusBadRequest)
 			return
 		}
+		batchBytes = len(body)
+		transactionCount = countTransactionItems(body)
+
 		if len(body) == 0 {
+			outcome = "empty_batch"
 			http.Error(w, "empty batch", http.StatusBadRequest)
 			return
 		}
@@ -69,6 +132,7 @@ func main() {
 		defer cancel()
 
 		if err := redisRPush(ctx, cfg.RedisAddr, cfg.RedisListKey, record); err != nil {
+			outcome = "redis_error"
 			http.Error(w, "failed to enqueue transaction batch", http.StatusBadGateway)
 			return
 		}
@@ -85,7 +149,7 @@ func main() {
 	// Requests to "/api/v1/" (and anything under it) will be passed to apiMux,
 	// but the "/api/v1" part of the path will be stripped first.
 	rootMux.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
-
+	rootMux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -149,4 +213,36 @@ func encodeRESP(args ...string) string {
 		fmt.Fprintf(&builder, "$%d\r\n%s\r\n", len(arg), arg)
 	}
 	return builder.String()
+}
+
+func countTransactionItems(body []byte) int {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return 0
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	token, err := decoder.Token()
+	if err != nil {
+		return 1
+	}
+
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '[' {
+		return 1
+	}
+
+	count := 0
+	for decoder.More() {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			if count == 0 {
+				return 1
+			}
+			return count
+		}
+		count++
+	}
+
+	return count
 }

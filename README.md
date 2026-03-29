@@ -23,6 +23,8 @@ Expect:
   - `haproxy` as the entry point
   - scalable `app` containers
   - `redis` as the sink
+  - `prometheus` for metrics collection
+  - `grafana` for visualization
 - supporting docs for architecture, throughput checklist, smoke testing, and soak testing
 
 ## Architecture
@@ -57,8 +59,14 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 │   └── config/
 │       └── config.go
 ├── docker/
+│   ├── grafana/
+│   │   └── provisioning/
+│   │       └── datasources/
+│   │           └── prometheus.yml
 │   ├── haproxy/
 │   │   └── haproxy.cfg
+│   ├── prometheus/
+│   │   └── prometheus.yml
 │   └── redis/
 │       └── redis.conf
 └── scripts/
@@ -84,12 +92,14 @@ Endpoints:
 - `GET /api/v1/healthz`
 - `GET /api/v1/readyz`
 - `POST /api/v1/transactions`
+- `GET /metrics`
 
 Behavior:
 
 - `healthz` returns `200 OK` if the process is up.
 - `readyz` returns `200 OK` if Redis is reachable.
 - `transactions` accepts a non-empty request body and returns `202 Accepted` after pushing the payload into Redis.
+- `metrics` exposes Prometheus-formatted application and Go runtime metrics.
 
 Example:
 
@@ -120,6 +130,10 @@ Compose variables:
 - `BLINK_HTTP_PORT`
 - `BLINK_RAMDISK_PATH`
 - `BLINK_REDIS_LIST_KEY`
+- `PROMETHEUS_PORT`
+- `GRAFANA_PORT`
+- `GRAFANA_ADMIN_USER`
+- `GRAFANA_ADMIN_PASSWORD`
 
 Defaults are documented in [.env.example](/Users/Matt.Maloney/projects/play/blink-financial/.env.example).
 
@@ -199,6 +213,13 @@ curl -X POST http://localhost:8080/api/v1/transactions \
 docker compose exec redis redis-cli LLEN blink:transactions
 ```
 
+7. Open the observability tools.
+
+```text
+Prometheus: http://localhost:9090
+Grafana:    http://localhost:3000
+```
+
 ## Running The Service Without Docker
 
 You can also run the service directly if Redis is already available:
@@ -226,6 +247,29 @@ docker compose up --build --scale app=10 -d
 ```
 
 HAProxy is configured to distribute requests across the `app` containers discovered on the Compose network.
+
+## Observability
+
+Prometheus scrapes the app's `/metrics` endpoint and Grafana is pre-provisioned with a Prometheus datasource.
+
+Useful URLs:
+
+- application metrics through the ingress path: `http://localhost:8080/metrics`
+- Prometheus UI: `http://localhost:9090`
+- Grafana UI: `http://localhost:3000`
+
+Default Grafana credentials come from `.env` and default to:
+
+- username: `admin`
+- password: `admin`
+
+The current app exports:
+
+- Go runtime metrics from the Prometheus Go client
+- `blink_ledger_transaction_batches_total`
+- `blink_ledger_transactions_total`
+- `blink_ledger_batch_bytes_total`
+- `blink_ledger_request_duration_seconds`
 
 ## Soak Testing With k6
 

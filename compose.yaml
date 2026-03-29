@@ -37,10 +37,45 @@ services:
       retries: 20
     volumes:
       - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - ${BLINK_RAMDISK_PATH:-/tmp/blink-ramdisk}/redis-data:/data
+      - ${BLINK_RAMDISK_PATH:-/Volumes/blink-ramdisk}/redis-data:/data
+    networks:
+      - blink
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    depends_on:
+      app:
+        condition: service_started
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - blink
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     networks:
       - blink
 
 networks:
   blink:
     driver: bridge
+
+volumes:
+  grafana_data:
