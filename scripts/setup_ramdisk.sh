@@ -48,6 +48,8 @@ case "$os" in
   Darwin)
     require_cmd hdiutil
     require_cmd diskutil
+    require_cmd awk
+    require_cmd sleep
 
     sectors=$((size_mb * 2048))
 
@@ -57,8 +59,29 @@ case "$os" in
     fi
 
     echo "Creating ${size_mb}MB RAM disk on macOS at ${mountpoint}..."
-    device="$(hdiutil attach -nomount "ram://${sectors}")"
-    diskutil erasevolume HFS+ "blink-ramdisk" "${device}" >/dev/null
+    device="$(hdiutil attach -nomount "ram://${sectors}" | awk 'END { print $1 }')"
+    disk_id="${device##*/}"
+
+    if [[ -z "${disk_id}" ]]; then
+      echo "Failed to resolve RAM disk device from hdiutil output." >&2
+      exit 1
+    fi
+
+    # Give Disk Arbitration a moment to register the new device.
+    for _ in 1 2 3 4 5; do
+      if diskutil info "${disk_id}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+
+    if ! diskutil info "${disk_id}" >/dev/null 2>&1; then
+      echo "macOS created ${device}, but diskutil could not resolve ${disk_id}." >&2
+      exit 1
+    fi
+
+    device="/dev/${disk_id}"
+    diskutil erasevolume HFS+ "blink-ramdisk" "${disk_id}" >/dev/null
 
     actual_mountpoint="/Volumes/blink-ramdisk"
     if [[ "${actual_mountpoint}" != "${mountpoint}" ]]; then

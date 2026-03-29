@@ -23,7 +23,7 @@ Expect:
   - `haproxy` as the entry point
   - scalable `app` containers
   - `redis` as the sink
-- supporting docs for architecture, throughput checklist, and soak testing
+- supporting docs for architecture, throughput checklist, smoke testing, and soak testing
 
 ## Architecture
 
@@ -46,7 +46,9 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 ├── checklist.md
 ├── architecture.md
 ├── k6/
+│   ├── light-load.js
 │   └── soak.js
+├── smoke-test-case.md
 ├── soak-test-case.md
 ├── cmd/
 │   └── ledger-sim/
@@ -60,6 +62,8 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 │   └── redis/
 │       └── redis.conf
 └── scripts/
+    ├── cleanup_ramdisk.sh
+    ├── install_k6.sh
     └── setup_ramdisk.sh
 ```
 
@@ -128,7 +132,11 @@ For local development you should have:
 - a RAM disk or other fast local path for Redis persistence
 - optionally `k6` if you want to run soak tests
 
-If you want a quick RAM disk helper, use [setup_ramdisk.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/setup_ramdisk.sh).
+If you want quick helpers for local setup, use:
+
+- [setup_ramdisk.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/setup_ramdisk.sh) to create and mount the RAM disk
+- [cleanup_ramdisk.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/cleanup_ramdisk.sh) to unmount it later
+- [install_k6.sh](/Users/Matt.Maloney/projects/play/blink-financial/scripts/install_k6.sh) to install `k6`
 
 A RAM disk is different from a normal directory. A normal directory is just a folder on your SSD or disk. A RAM disk is a separate filesystem backed by memory and mounted at a directory path. The path looks like a normal folder, but reads and writes go to RAM instead of disk. That is why it is useful here: Redis can write to a very fast memory-backed path during local throughput tests.
 
@@ -142,12 +150,18 @@ cp .env.example .env
 
 2. Create the RAM disk and make sure the Redis target path exists.
 
-If you use the helper script, it creates and mounts a RAM-backed filesystem first. That is different from just running `mkdir`, which would only create a normal folder on disk.
+If you use the helper script, it creates and mounts a RAM-backed filesystem first. On macOS it does that with `hdiutil` and `diskutil`, then waits for the OS to register the new device before formatting and mounting it. That is different from just running `mkdir`, which would only create a normal folder on disk.
 
 Example:
 
 ```bash
 ./scripts/setup_ramdisk.sh 1024 /Volumes/blink-ramdisk
+```
+
+If you want to know the cleanup path in advance, the matching teardown command is:
+
+```bash
+./scripts/cleanup_ramdisk.sh /Volumes/blink-ramdisk --remove-dir
 ```
 
 Then create the Redis data directory inside that mounted filesystem:
@@ -230,6 +244,18 @@ Example target:
 k6 run -e BASE_URL=http://localhost:8080 k6/soak.js
 ```
 
+## Smoke Testing With k6
+
+For a quick, low-risk validation pass, use the light-load script in [light-load.js](/Users/Matt.Maloney/projects/play/blink-financial/k6/light-load.js).
+
+Example target:
+
+```bash
+k6 run -e BASE_URL=http://localhost:8080 k6/light-load.js
+```
+
+The longer step-by-step guide is in [smoke-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/smoke-test-case.md).
+
 ## Design Notes
 
 Some intentional simplifications in the current code:
@@ -269,4 +295,5 @@ Natural follow-up improvements for this repo are:
 
 - [checklist.md](/Users/Matt.Maloney/projects/play/blink-financial/checklist.md) for the original throughput checklist
 - [architecture.md](/Users/Matt.Maloney/projects/play/blink-financial/architecture.md) for the ASCII architecture diagram
+- [smoke-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/smoke-test-case.md) for quick `k6` validation runs
 - [soak-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/soak-test-case.md) for k6 soak-test instructions
