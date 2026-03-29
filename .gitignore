@@ -6,6 +6,3 @@
 
 # Local environment overrides
 .env
-
-# Go dependency checksums
-go.sum
