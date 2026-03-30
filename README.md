@@ -60,7 +60,11 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 │       └── config.go
 ├── docker/
 │   ├── grafana/
+│   │   ├── dashboards/
+│   │   │   └── blink-overview.json
 │   │   └── provisioning/
+│   │       └── dashboards/
+│   │           └── dashboards.yml
 │   │       └── datasources/
 │   │           └── prometheus.yml
 │   ├── haproxy/
@@ -250,7 +254,10 @@ HAProxy is configured to distribute requests across the `app` containers discove
 
 ## Observability
 
-Prometheus scrapes the app's `/metrics` endpoint and Grafana is pre-provisioned with a Prometheus datasource.
+Prometheus scrapes the app's `/metrics` endpoint and Grafana is pre-provisioned with both:
+
+- a Prometheus datasource
+- a default dashboard named `Blink Financial Overview`
 
 Useful URLs:
 
@@ -270,6 +277,11 @@ The current app exports:
 - `blink_ledger_transactions_total`
 - `blink_ledger_batch_bytes_total`
 - `blink_ledger_request_duration_seconds`
+
+Provisioned Grafana files live under:
+
+- [dashboards.yml](/Users/Matt.Maloney/projects/play/blink-financial/docker/grafana/provisioning/dashboards/dashboards.yml)
+- [blink-overview.json](/Users/Matt.Maloney/projects/play/blink-financial/docker/grafana/dashboards/blink-overview.json)
 
 ## Soak Testing With k6
 
