@@ -29,6 +29,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    user: "999:1000"
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

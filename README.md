@@ -190,6 +190,17 @@ mkdir -p /Volumes/blink-ramdisk/redis-data
 
 This two-step process matters. If `/Volumes/blink-ramdisk` is only a normal folder, Docker will still bind mount it, but Redis will write to your regular disk instead of RAM.
 
+If you are using Colima, there is one more important detail: the RAM disk path must also be shared into the Colima VM. Otherwise Redis may write to a VM-local path that looks the same, while your host RAM disk stays empty. See [colima-ramdisk-note.md](/Users/Matt.Maloney/projects/play/blink-financial/colima-ramdisk-note.md) before continuing.
+
+If Redis later fails to start with a `chown: .: Permission denied` message, update the host bind-mounted directory ownership for the Redis container user before retrying:
+
+```bash
+sudo chown -R 999:1000 /Volumes/blink-ramdisk/redis-data
+chmod -R u+rwX /Volumes/blink-ramdisk/redis-data
+```
+
+This repository also runs Redis as user `999:1000` in Compose so the container does not try to `chown` the shared mount at startup.
+
 3. Start the stack.
 
 ```bash
