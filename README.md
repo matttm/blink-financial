@@ -352,7 +352,6 @@ Those limitations matter for performance numbers. Treat current benchmark result
 
 Natural follow-up improvements for this repo are:
 
-1. Add Prometheus metrics and pprof endpoints
 2. Replace per-request Redis dialing with connection reuse
 3. Introduce an append-only WAL on the RAM disk
 4. Separate ingestion from background persistence workers
