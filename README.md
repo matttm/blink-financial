@@ -84,7 +84,7 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 1. A client sends an HTTP request to HAProxy on port `8080`.
 2. HAProxy forwards the request to one of the running app replicas.
 3. The Go service accepts the batch at `POST /api/v1/transactions`.
-4. The app pushes the request payload into Redis using a raw RESP write.
+4. The app pushes the request payload into Redis using a pooled `redis/go-redis` client.
 5. Redis persists its append-only data under the host path configured by `BLINK_RAMDISK_PATH`.
 
 ## API
@@ -329,7 +329,7 @@ Some intentional simplifications in the current code:
 
 - the HTTP server uses the standard library `http.ServeMux`
 - the service reads config once at startup into a typed config struct
-- Redis writes are sent using raw TCP plus RESP rather than a client library
+- Redis writes use `redis/go-redis` with its built-in connection pool
 - the app returns quickly after queueing the request into Redis
 
 These choices keep the current prototype small and easy to inspect.
@@ -340,10 +340,8 @@ This repository is useful for topology and local throughput experiments, but it 
 
 Important current limitations:
 
-- each request opens a fresh Redis connection
 - each request is logged synchronously
 - transaction payloads are pushed whole into Redis rather than being normalized or written to a WAL
-- there are no Prometheus metrics yet
 - the sink is Redis-backed, not an append-only binary ledger
 
 Those limitations matter for performance numbers. Treat current benchmark results as directional, not authoritative.
@@ -352,10 +350,9 @@ Those limitations matter for performance numbers. Treat current benchmark result
 
 Natural follow-up improvements for this repo are:
 
-2. Replace per-request Redis dialing with connection reuse
-3. Introduce an append-only WAL on the RAM disk
-4. Separate ingestion from background persistence workers
-5. Add integration tests for the API and Redis sink behavior
+2. Introduce an append-only WAL on the RAM disk
+3. Separate ingestion from background persistence workers
+4. Add integration tests for the API and Redis sink behavior
 
 ## Additional Docs
 

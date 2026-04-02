@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/matttm/blink-financial/internal/config"
 	"github.com/matttm/blink-financial/internal/metrics"
+	"github.com/matttm/blink-financial/internal/store"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +23,8 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 	metricsService := metrics.NewService(nil, nil)
+	redisQueue := store.NewRedisQueue(cfg.RedisAddr)
+	defer redisQueue.Close()
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -35,7 +36,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
-		if err := redisPing(ctx, cfg.RedisAddr); err != nil {
+		if err := redisQueue.Ping(ctx); err != nil {
 			http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -87,7 +88,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		defer cancel()
 
-		if err := redisRPush(ctx, cfg.RedisAddr, cfg.RedisListKey, record); err != nil {
+		if err := redisQueue.Enqueue(ctx, cfg.RedisListKey, record); err != nil {
 			outcome = "redis_error"
 			http.Error(w, "failed to enqueue transaction batch", http.StatusBadGateway)
 			return
@@ -123,52 +124,6 @@ func requestLogger(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
 	})
-}
-
-func redisPing(ctx context.Context, addr string) error {
-	return redisCommand(ctx, addr, "PING")
-}
-
-func redisRPush(ctx context.Context, addr, key, value string) error {
-	return redisCommand(ctx, addr, "RPUSH", key, value)
-}
-
-func redisCommand(ctx context.Context, addr string, args ...string) error {
-	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(deadline)
-	}
-
-	if _, err := io.WriteString(conn, encodeRESP(args...)); err != nil {
-		return err
-	}
-
-	reader := bufio.NewReader(conn)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return err
-	}
-
-	if strings.HasPrefix(line, "-") {
-		return fmt.Errorf("redis error: %s", strings.TrimSpace(line))
-	}
-
-	return nil
-}
-
-func encodeRESP(args ...string) string {
-	var builder strings.Builder
-	fmt.Fprintf(&builder, "*%d\r\n", len(args))
-	for _, arg := range args {
-		fmt.Fprintf(&builder, "$%d\r\n%s\r\n", len(arg), arg)
-	}
-	return builder.String()
 }
 
 func countTransactionItems(body []byte) int {

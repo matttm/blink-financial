@@ -186,10 +186,8 @@ The current sample app is useful for topology testing, but it is not yet optimiz
 
 Known constraints:
 
-- each request opens a fresh Redis TCP connection
-- each request logs synchronously
+- each request is still logged synchronously
 - the app pushes whole request payloads into Redis without batching downstream writes
-- there are no Prometheus metrics yet
 
 That means your first soak tests should be treated as baseline topology tests, not final performance numbers.
 
@@ -197,7 +195,5 @@ That means your first soak tests should be treated as baseline topology tests, n
 
 Before pushing toward very high TPS, the next useful changes are:
 
-1. Add Prometheus metrics for request rate, latency, and Redis write failures
-2. Replace per-request Redis connection setup with a pooled or persistent approach
-3. Reduce or disable per-request logging during load tests
-4. Move from this Redis sink toward the append-only WAL design in your checklist
+1. Reduce or disable per-request logging during load tests
+2. Move from this Redis sink toward the append-only WAL design in your checklist
