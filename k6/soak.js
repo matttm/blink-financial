@@ -1,4 +1,5 @@
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check, sleep } from 'k6';
 
 const baseUrl = __ENV.BASE_URL || 'http://localhost:8080';
@@ -26,12 +27,12 @@ export const options = {
   },
 };
 
-function makeBatch(size, hotAccounts) {
+function makeBatch(size, hotAccounts, iteration) {
   const txs = [];
 
   for (let i = 0; i < size; i++) {
     txs.push({
-      id: `${__VU}-${__ITER}-${i}`,
+      id: `${exec.vu.idInTest}-${iteration}-${i}`,
       account_id: `acct-${i % hotAccounts}`,
       amount_cents: (i % 5000) + 1,
       currency: 'USD',
@@ -42,9 +43,9 @@ function makeBatch(size, hotAccounts) {
   return JSON.stringify(txs);
 }
 
-const payload = makeBatch(batchSize, hotAccountCount);
-
 export default function () {
+  const payload = makeBatch(batchSize, hotAccountCount, exec.scenario.iterationInTest);
+
   const res = http.post(`${baseUrl}/api/v1/transactions`, payload, {
     headers: { 'Content-Type': 'application/json' },
     timeout: '2s',
