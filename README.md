@@ -324,6 +324,8 @@ Provisioned Grafana files live under:
 
 The repository already includes a longer guide in [soak-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/soak-test-case.md).
 
+For log interpretation during or after a run, see [log-review-guide.md](/Users/Matt.Maloney/projects/play/blink-financial/log-review-guide.md).
+
 The short version is:
 
 1. Bring the stack up.
