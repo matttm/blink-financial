@@ -25,6 +25,7 @@ func main() {
 	metricsService := metrics.NewService(nil, nil)
 	redisQueue := store.NewRedisQueue(cfg.RedisAddr)
 	defer redisQueue.Close()
+	metricsService.RegisterRedisPoolStats(nil, redisQueue.PoolStats)
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

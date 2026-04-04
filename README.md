@@ -207,6 +207,14 @@ This repository also runs Redis as user `999:1000` in Compose so the container d
 docker compose up --build --scale app=3 -d
 ```
 
+If you change container configuration, provisioning files, mounted config files, or other startup-time assets and the change does not appear, recreate the affected containers explicitly:
+
+```bash
+docker compose up --build -d --force-recreate
+```
+
+That is especially common after changes to Grafana dashboards, Prometheus config, Compose settings, or container user and volume behavior.
+
 4. Check the health endpoints.
 
 ```bash
@@ -270,6 +278,15 @@ Prometheus scrapes the app's `/metrics` endpoint and Grafana is pre-provisioned 
 - a Prometheus datasource
 - a default dashboard named `Blink Financial Overview`
 
+The default dashboard includes panels for:
+
+- batch throughput
+- transaction throughput
+- transaction latency
+- batch bytes throughput
+- Go routines and memory
+- Redis pool connections and Redis pool activity
+
 Useful URLs:
 
 - application metrics through the ingress path: `http://localhost:8080/metrics`
@@ -288,6 +305,15 @@ The current app exports:
 - `blink_ledger_transactions_total`
 - `blink_ledger_batch_bytes_total`
 - `blink_ledger_request_duration_seconds`
+- `blink_redis_pool_hits_total`
+- `blink_redis_pool_misses_total`
+- `blink_redis_pool_timeouts_total`
+- `blink_redis_pool_wait_count_total`
+- `blink_redis_pool_wait_duration_seconds_total`
+- `blink_redis_pool_unusable_total`
+- `blink_redis_pool_total_conns`
+- `blink_redis_pool_idle_conns`
+- `blink_redis_pool_stale_conns`
 
 Provisioned Grafana files live under:
 

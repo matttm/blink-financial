@@ -29,3 +29,7 @@ func (q *RedisQueue) Ping(ctx context.Context) error {
 func (q *RedisQueue) Enqueue(ctx context.Context, listKey, value string) error {
 	return q.client.RPush(ctx, listKey, value).Err()
 }
+
+func (q *RedisQueue) PoolStats() *redis.PoolStats {
+	return q.client.PoolStats()
+}

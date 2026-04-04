@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
@@ -76,4 +77,94 @@ func (s *Service) RecordTransactionBatch(outcome string, transactionCount int, b
 	s.transactionItemsTotal.WithLabelValues(outcome).Add(float64(transactionCount))
 	s.transactionBatchBytesTotal.WithLabelValues(outcome).Add(float64(batchBytes))
 	s.transactionRequestDuration.WithLabelValues("transactions", outcome).Observe(duration.Seconds())
+}
+
+func (s *Service) RegisterRedisPoolStats(registerer prometheus.Registerer, statsFn func() *redis.PoolStats) {
+	if registerer == nil {
+		registerer = prometheus.DefaultRegisterer
+	}
+
+	registerer.MustRegister(
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_hits_total",
+				Help: "Total number of Redis pool cache hits.",
+			},
+			func() float64 {
+				return float64(statsFn().Hits)
+			},
+		),
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_misses_total",
+				Help: "Total number of Redis pool misses.",
+			},
+			func() float64 {
+				return float64(statsFn().Misses)
+			},
+		),
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_timeouts_total",
+				Help: "Total number of Redis pool timeouts.",
+			},
+			func() float64 {
+				return float64(statsFn().Timeouts)
+			},
+		),
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_wait_count_total",
+				Help: "Total number of times the Redis client waited for a pooled connection.",
+			},
+			func() float64 {
+				return float64(statsFn().WaitCount)
+			},
+		),
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_unusable_total",
+				Help: "Total number of Redis connections marked unusable.",
+			},
+			func() float64 {
+				return float64(statsFn().Unusable)
+			},
+		),
+		prometheus.NewCounterFunc(
+			prometheus.CounterOpts{
+				Name: "blink_redis_pool_wait_duration_seconds_total",
+				Help: "Total time spent waiting for Redis pool connections.",
+			},
+			func() float64 {
+				return float64(statsFn().WaitDurationNs) / float64(time.Second)
+			},
+		),
+		prometheus.NewGaugeFunc(
+			prometheus.GaugeOpts{
+				Name: "blink_redis_pool_total_conns",
+				Help: "Current number of total Redis pool connections.",
+			},
+			func() float64 {
+				return float64(statsFn().TotalConns)
+			},
+		),
+		prometheus.NewGaugeFunc(
+			prometheus.GaugeOpts{
+				Name: "blink_redis_pool_idle_conns",
+				Help: "Current number of idle Redis pool connections.",
+			},
+			func() float64 {
+				return float64(statsFn().IdleConns)
+			},
+		),
+		prometheus.NewGaugeFunc(
+			prometheus.GaugeOpts{
+				Name: "blink_redis_pool_stale_conns",
+				Help: "Current number of stale Redis pool connections.",
+			},
+			func() float64 {
+				return float64(statsFn().StaleConns)
+			},
+		),
+	)
 }
