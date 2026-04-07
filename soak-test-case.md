@@ -13,10 +13,10 @@ The current stack is:
 The Go app currently accepts:
 
 - `POST /api/v1/transactions`
-- A non-empty request body
-- JSON is fine for the load test payload
+- A JSON batch object with `batch_id`, `source`, and `transactions`
+- Each transaction must include `idempotency_key`, `tenant_id`, `account_id`, `type`, `amount`, and `occurred_at`
 
-On success, the service returns `202 Accepted` and pushes the batch into Redis.
+On success, the service returns `202 Accepted` and pushes the validated batch into Redis.
 
 ## 1. Prepare The Environment
 

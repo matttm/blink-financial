@@ -27,18 +27,31 @@ export const options = {
 
 function makeBatch(size, hotAccounts, iteration) {
   const txs = [];
+  const occurredAt = new Date().toISOString();
 
   for (let i = 0; i < size; i++) {
     txs.push({
-      id: `${exec.vu.idInTest}-${iteration}-${i}`,
+      idempotency_key: `idem-${exec.vu.idInTest}-${iteration}-${i}`,
+      tenant_id: `tenant-${Math.floor(i / hotAccounts) % 4}`,
       account_id: `acct-${i % hotAccounts}`,
-      amount_cents: (i % 5000) + 1,
-      currency: 'USD',
-      ts: new Date().toISOString(),
+      type: i % 2 === 0 ? 'debit' : 'credit',
+      amount: {
+        currency: 'USD',
+        value: ((i % 500) + 1).toFixed(2),
+      },
+      reference: `smoke-${iteration}-${i}`,
+      occurred_at: occurredAt,
+      metadata: {
+        source_channel: 'light-load',
+      },
     });
   }
 
-  return JSON.stringify(txs);
+  return JSON.stringify({
+    batch_id: `batch-${exec.vu.idInTest}-${iteration}`,
+    source: 'k6-light-load',
+    transactions: txs,
+  });
 }
 
 export default function () {

@@ -102,7 +102,7 @@ Behavior:
 
 - `healthz` returns `200 OK` if the process is up.
 - `readyz` returns `200 OK` if Redis is reachable.
-- `transactions` accepts a non-empty request body and returns `202 Accepted` after pushing the payload into Redis.
+- `transactions` accepts a JSON transaction batch, validates it, and returns `202 Accepted` after pushing the normalized event into Redis.
 - `metrics` exposes Prometheus-formatted application and Go runtime metrics.
 
 Example:
@@ -115,7 +115,27 @@ curl -i http://localhost:8080/api/v1/readyz
 curl -i \
   -X POST http://localhost:8080/api/v1/transactions \
   -H 'Content-Type: application/json' \
-  -d '[{"id":"txn-1","account_id":"acct-1","amount_cents":1250,"currency":"USD"}]'
+  -d '{
+    "batch_id": "batch-001",
+    "source": "checkout",
+    "transactions": [
+      {
+        "idempotency_key": "idem-001",
+        "tenant_id": "tenant-123",
+        "account_id": "acct-456",
+        "type": "debit",
+        "amount": {
+          "currency": "USD",
+          "value": "12.50"
+        },
+        "reference": "invoice-789",
+        "occurred_at": "2026-04-07T14:30:00Z",
+        "metadata": {
+          "source_channel": "web"
+        }
+      }
+    ]
+  }'
 ```
 
 ## Configuration
@@ -227,7 +247,27 @@ curl http://localhost:8080/api/v1/readyz
 ```bash
 curl -X POST http://localhost:8080/api/v1/transactions \
   -H 'Content-Type: application/json' \
-  -d '[{"id":"txn-1","account_id":"acct-1","amount_cents":1250,"currency":"USD"}]'
+  -d '{
+    "batch_id": "batch-001",
+    "source": "checkout",
+    "transactions": [
+      {
+        "idempotency_key": "idem-001",
+        "tenant_id": "tenant-123",
+        "account_id": "acct-456",
+        "type": "debit",
+        "amount": {
+          "currency": "USD",
+          "value": "12.50"
+        },
+        "reference": "invoice-789",
+        "occurred_at": "2026-04-07T14:30:00Z",
+        "metadata": {
+          "source_channel": "web"
+        }
+      }
+    ]
+  }'
 ```
 
 6. Inspect queue depth in Redis.

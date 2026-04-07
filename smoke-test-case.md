@@ -23,7 +23,7 @@ The smoke test targets:
 
 - `POST /api/v1/transactions`
 
-On success, the service returns `202 Accepted`.
+On success, the service returns `202 Accepted` for a validated JSON transaction batch.
 
 ## 1. Prepare The Environment
 
