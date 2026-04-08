@@ -30,6 +30,14 @@ func (q *RedisQueue) Enqueue(ctx context.Context, listKey, value string) error {
 	return q.client.RPush(ctx, listKey, value).Err()
 }
 
+func (q *RedisQueue) Publish(ctx context.Context, channel, value string) error {
+	return q.client.Publish(ctx, channel, value).Err()
+}
+
+func (q *RedisQueue) Subscribe(ctx context.Context, channel string) *redis.PubSub {
+	return q.client.Subscribe(ctx, channel)
+}
+
 func (q *RedisQueue) PoolStats() *redis.PoolStats {
 	return q.client.PoolStats()
 }

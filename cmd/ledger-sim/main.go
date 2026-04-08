@@ -2,27 +2,23 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/matttm/blink-financial/internal/config"
+	transactionsv1 "github.com/matttm/blink-financial/internal/gen/blink/transactions/v1"
+	grpcapi "github.com/matttm/blink-financial/internal/grpcapi"
+	"github.com/matttm/blink-financial/internal/ingest"
 	"github.com/matttm/blink-financial/internal/metrics"
 	"github.com/matttm/blink-financial/internal/store"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 const maxBodyBytes = 1 << 20
-
-type transactionBatchEvent struct {
-	Instance         string      `json:"instance"`
-	ReceivedAt       time.Time   `json:"received_at"`
-	BatchID          string      `json:"batch_id"`
-	Source           string      `json:"source"`
-	TransactionCount int         `json:"transaction_count"`
-	Transactions     interface{} `json:"transactions"`
-}
 
 func main() {
 	cfg, err := config.Load()
@@ -34,6 +30,7 @@ func main() {
 	redisQueue := store.NewRedisQueue(cfg.RedisAddr)
 	defer redisQueue.Close()
 	metricsService.RegisterRedisPoolStats(nil, redisQueue.PoolStats)
+	ingestService := ingest.NewService(cfg.InstanceID, cfg.RedisListKey, redisQueue)
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -61,28 +58,10 @@ func main() {
 			return
 		}
 
-		event := transactionBatchEvent{
-			Instance:         cfg.InstanceID,
-			ReceivedAt:       time.Now().UTC(),
-			BatchID:          validatedBatch.Batch.BatchID,
-			Source:           validatedBatch.Batch.Source,
-			TransactionCount: len(validatedBatch.Batch.Transactions),
-			Transactions:     validatedBatch.Batch.Transactions,
-		}
-
-		record, err := json.Marshal(event)
-		if err != nil {
-			if validatedBatch.Outcome != nil {
-				*validatedBatch.Outcome = "encode_error"
-			}
-			http.Error(w, "failed to encode transaction batch", http.StatusInternalServerError)
-			return
-		}
-
 		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		defer cancel()
 
-		if err := redisQueue.Enqueue(ctx, cfg.RedisListKey, string(record)); err != nil {
+		if err := ingestService.EnqueueBatch(ctx, validatedBatch.Batch); err != nil {
 			if validatedBatch.Outcome != nil {
 				*validatedBatch.Outcome = "redis_error"
 			}
@@ -111,7 +90,23 @@ func main() {
 		ReadHeaderTimeout: 2 * time.Second,
 	}
 
-	log.Printf("blink ledger simulator listening on :%s, redis=%s", cfg.Port, cfg.RedisAddr)
+	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	if err != nil {
+		log.Fatalf("listen grpc: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	transactionsv1.RegisterTransactionEventsServiceServer(grpcServer, grpcapi.NewServer(ingestService))
+	reflection.Register(grpcServer)
+
+	go func() {
+		log.Printf("blink ledger grpc listening on :%s, redis=%s", cfg.GRPCPort, cfg.RedisAddr)
+		if err := grpcServer.Serve(grpcListener); err != nil {
+			log.Fatalf("grpc serve: %v", err)
+		}
+	}()
+
+	log.Printf("blink ledger http listening on :%s, redis=%s", cfg.Port, cfg.RedisAddr)
 	log.Fatal(server.ListenAndServe())
 }
 

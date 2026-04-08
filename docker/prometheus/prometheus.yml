@@ -13,3 +13,8 @@ scrape_configs:
       - names: ["app"]
         type: A
         port: 8080
+
+  - job_name: blink-grpc
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grpc:8080"]

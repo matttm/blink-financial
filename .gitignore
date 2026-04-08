@@ -6,3 +6,6 @@
 
 # Local environment overrides
 .env
+
+# Local protobuf/codegen tools
+/bin/

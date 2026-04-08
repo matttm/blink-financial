@@ -32,7 +32,7 @@ func transactionValidationMiddleware(metricsService *metrics.Service, next http.
 		batchBytes := 0
 
 		defer func() {
-			metricsService.RecordTransactionBatch(outcome, transactionCount, batchBytes, time.Since(start))
+			metricsService.RecordTransactionBatch("transactions", outcome, transactionCount, batchBytes, time.Since(start))
 		}()
 
 		if r.Method != http.MethodPost {

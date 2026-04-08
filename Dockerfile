@@ -20,5 +20,6 @@ COPY --from=build /out/blink-ledger /usr/local/bin/blink-ledger
 USER appuser
 
 EXPOSE 8080
+EXPOSE 9091
 
 ENTRYPOINT ["/usr/local/bin/blink-ledger"]

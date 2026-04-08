@@ -72,11 +72,11 @@ func (s *Service) Handler() http.Handler {
 	return s.handler
 }
 
-func (s *Service) RecordTransactionBatch(outcome string, transactionCount int, batchBytes int, duration time.Duration) {
+func (s *Service) RecordTransactionBatch(endpoint, outcome string, transactionCount int, batchBytes int, duration time.Duration) {
 	s.transactionBatchesTotal.WithLabelValues(outcome).Inc()
 	s.transactionItemsTotal.WithLabelValues(outcome).Add(float64(transactionCount))
 	s.transactionBatchBytesTotal.WithLabelValues(outcome).Add(float64(batchBytes))
-	s.transactionRequestDuration.WithLabelValues("transactions", outcome).Observe(duration.Seconds())
+	s.transactionRequestDuration.WithLabelValues(endpoint, outcome).Observe(duration.Seconds())
 }
 
 func (s *Service) RegisterRedisPoolStats(registerer prometheus.Registerer, statsFn func() *redis.PoolStats) {

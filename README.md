@@ -87,6 +87,20 @@ More detail is in [architecture.md](/Users/Matt.Maloney/projects/play/blink-fina
 4. The app pushes the request payload into Redis using a pooled `redis/go-redis` client.
 5. Redis persists its append-only data under the host path configured by `BLINK_RAMDISK_PATH`.
 
+There is also a direct gRPC event stream in the current stack:
+
+1. A client connects directly to the `grpc` service on port `9091`.
+2. The Go service streams accepted transaction events through `blink.transactions.v1.TransactionEventsService/StreamTransactions`.
+3. The event stream is intended for operator tools like a Rust TUI, not for primary ingest.
+
+The Compose file keeps `app` and `grpc` as separate services even though they run the same binary. That split is intentional:
+
+- `app` is the scalable HTTP ingest tier behind HAProxy
+- `grpc` gives you one stable direct host port for the TUI event stream
+- publishing `9091` directly on the scaled `app` service would not work cleanly once multiple replicas are running, because only one container can bind a fixed host port
+
+So the duplication is operational, not architectural: there is still one application binary, but Compose uses two service entries to satisfy two different networking needs.
+
 ## API
 
 The current service is mounted under the `/api/v1` prefix.
@@ -97,6 +111,7 @@ Endpoints:
 - `GET /api/v1/readyz`
 - `POST /api/v1/transactions`
 - `GET /metrics`
+- gRPC: `blink.transactions.v1.TransactionEventsService/StreamTransactions` on `localhost:9091`
 
 Behavior:
 
@@ -104,6 +119,7 @@ Behavior:
 - `readyz` returns `200 OK` if Redis is reachable.
 - `transactions` accepts a JSON transaction batch, validates it, and returns `202 Accepted` after pushing the normalized event into Redis.
 - `metrics` exposes Prometheus-formatted application and Go runtime metrics.
+- `StreamTransactions` streams accepted transaction events to subscribers and supports optional filters like `source`, `tenant_id`, `account_id`, and `batch_id`.
 
 Example:
 
@@ -138,6 +154,17 @@ curl -i \
   }'
 ```
 
+If you want to test the gRPC endpoint directly, `grpcurl` works well because server reflection is enabled:
+
+```bash
+grpcurl -plaintext localhost:9091 list
+
+grpcurl -plaintext \
+  -d '{"source":"checkout","tenantId":"tenant-123"}' \
+  localhost:9091 \
+  blink.transactions.v1.TransactionEventsService/StreamTransactions
+```
+
 ## Configuration
 
 The service reads its configuration from environment variables at startup.
@@ -145,6 +172,7 @@ The service reads its configuration from environment variables at startup.
 App variables:
 
 - `PORT`
+- `GRPC_PORT`
 - `REDIS_ADDR`
 - `REDIS_LIST_KEY`
 - `HOSTNAME`
@@ -152,6 +180,7 @@ App variables:
 Compose variables:
 
 - `BLINK_HTTP_PORT`
+- `BLINK_GRPC_PORT`
 - `BLINK_RAMDISK_PATH`
 - `BLINK_REDIS_LIST_KEY`
 - `PROMETHEUS_PORT`
@@ -169,6 +198,17 @@ For local development you should have:
 - Docker with Compose support
 - a RAM disk or other fast local path for Redis persistence
 - optionally `k6` if you want to run soak tests
+- optionally `grpcurl` if you want to test the gRPC endpoint directly
+
+For the new gRPC and protobuf workflow, these tools are also useful:
+
+- `protoc`
+- `protoc-gen-go`
+- `protoc-gen-go-grpc`
+
+The generated gRPC stubs are checked into the repository already. You only need the protobuf toolchain locally if you plan to modify [transactions.proto](/Users/Matt.Maloney/projects/play/blink-financial/proto/blink/transactions/v1/transactions.proto) and regenerate code.
+
+The regeneration command and broader contributor workflow for expanding transports and generated code live in [capability-expansion-guide.md](/Users/Matt.Maloney/projects/play/blink-financial/capability-expansion-guide.md).
 
 If you want quick helpers for local setup, use:
 
@@ -242,6 +282,12 @@ curl http://localhost:8080/api/v1/healthz
 curl http://localhost:8080/api/v1/readyz
 ```
 
+If you want to verify the direct gRPC listener too:
+
+```bash
+grpcurl -plaintext localhost:9091 list
+```
+
 5. Send a sample batch.
 
 ```bash
@@ -303,17 +349,22 @@ curl http://localhost:8080/api/v1/healthz
 
 ## Scaling The App Replicas
 
-Compose defines a single `app` service. To increase concurrency, scale that service at runtime:
+Compose uses:
+
+- a scalable `app` service for HTTP ingest behind HAProxy
+- a separate `grpc` service for one stable direct gRPC stream on `localhost:9091`
+
+To increase HTTP ingest concurrency, scale the `app` service at runtime:
 
 ```bash
 docker compose up --build --scale app=10 -d
 ```
 
-HAProxy is configured to distribute requests across the `app` containers discovered on the Compose network.
+HAProxy is configured to distribute requests across the `app` containers discovered on the Compose network. The `grpc` service is not part of that load-balanced path; it stays single-instance so the TUI has one predictable streaming endpoint.
 
 ## Observability
 
-Prometheus scrapes the app's `/metrics` endpoint and Grafana is pre-provisioned with both:
+Prometheus scrapes the HTTP app replicas and the direct `grpc` service at `/metrics`, and Grafana is pre-provisioned with both:
 
 - a Prometheus datasource
 - a default dashboard named `Blink Financial Overview`

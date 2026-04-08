@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package blink.transactions.v1;
+
+option go_package = "github.com/matttm/blink-financial/internal/gen/blink/transactions/v1;transactionsv1";
+
+import "google/protobuf/timestamp.proto";
+
+service TransactionEventsService {
+  rpc StreamTransactions(StreamTransactionsRequest) returns (stream TransactionEvent);
+}
+
+message StreamTransactionsRequest {
+  string source = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+  string batch_id = 4;
+}
+
+message TransactionEvent {
+  string instance = 1;
+  google.protobuf.Timestamp received_at = 2;
+  string batch_id = 3;
+  string source = 4;
+  int32 transaction_count = 5;
+  repeated Transaction transactions = 6;
+}
+
+message Transaction {
+  string idempotency_key = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+  string type = 4;
+  Amount amount = 5;
+  string reference = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+  map<string, string> metadata = 8;
+}
+
+message Amount {
+  string currency = 1;
+  string value = 2;
+}
