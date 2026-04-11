@@ -469,9 +469,10 @@ Those limitations matter for performance numbers. Treat current benchmark result
 
 Natural follow-up improvements for this repo are:
 
-2. Introduce an append-only WAL on the RAM disk
-3. Separate ingestion from background persistence workers
-4. Add integration tests for the API and Redis sink behavior
+1. Introduce an append-only WAL on the RAM disk
+2. Separate ingestion from background persistence workers
+3. Add integration tests for the API and Redis sink behavior
+4. If the gRPC stream needs to scale beyond a single direct endpoint, add an Envoy layer in front of the gRPC services so the TUI can keep one stable address.
 
 ## Additional Docs
 
@@ -479,3 +480,5 @@ Natural follow-up improvements for this repo are:
 - [architecture.md](/Users/Matt.Maloney/projects/play/blink-financial/architecture.md) for the ASCII architecture diagram
 - [smoke-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/smoke-test-case.md) for quick `k6` validation runs
 - [soak-test-case.md](/Users/Matt.Maloney/projects/play/blink-financial/soak-test-case.md) for k6 soak-test instructions
+- [capability-expansion-guide.md](/Users/Matt.Maloney/projects/play/blink-financial/capability-expansion-guide.md) for protobuf/codegen and expansion workflows
+- [transaction-monitor README](/Users/Matt.Maloney/projects/play/blink-financial/tui/transaction-monitor/README.md) for the Rust `ratatui` gRPC stream client

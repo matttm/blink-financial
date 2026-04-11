@@ -9,3 +9,6 @@
 
 # Local protobuf/codegen tools
 /bin/
+
+# Local Rust build output
+target/
